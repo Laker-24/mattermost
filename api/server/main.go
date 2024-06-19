@@ -11,6 +11,7 @@ import (
 	"go/printer"
 	"go/token"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/Laker-24/mattermost/tree/master/server/channels/api4"
 	"github.com/pb33f/libopenapi"
 	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
