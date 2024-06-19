@@ -37,7 +37,7 @@ func main() {
 func main() {
 	//自动删除超过24小时聊天记录
 	// 初始化数据库连接
-	dsn := "mmuser:mmuser_password@tcp(101.43.103.236:3307)/mattermost"
+	dsn := "mmuser:mmuser_password@tcp(db:3307)/mattermost"
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
