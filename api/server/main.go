@@ -11,8 +11,7 @@ import (
 	"go/printer"
 	"go/token"
 
-	"github.com/go-sql-driver/mysql"
-	"github.com/Laker-24/mattermost/tree/master/server/channels/api4"
+
 	"github.com/pb33f/libopenapi"
 	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"golang.org/x/tools/imports"
@@ -36,18 +35,6 @@ func main() {
 }`
 
 func main() {
-	//自动删除超过24小时聊天记录
-	// 初始化数据库连接
-	dsn := "mmuser:mmuser_password@tcp(db:3307)/mattermost"
-	db, err := sql.Open("mysql", dsn)
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
-	defer db.Close()
-
-	// 启动定时删除任务
-	go api4.scheduledDelete(db)
-
 	
 	var exampleTmpl = template.Must(template.New("example").Parse(exampleText))
 
@@ -90,8 +77,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// 保持主程序运行
-	select {}
+
 }
 
 func applyExamples(v3Model *libopenapi.DocumentModel[v3high.Document], tmpl *template.Template) {
