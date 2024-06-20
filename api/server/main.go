@@ -5,13 +5,16 @@ import (
 	"log"
 	"os"
 	"text/template"
+	"database/sql"
+	"time"
+	"fmt"
 
 	"go/ast"
 	"go/parser"
 	"go/printer"
 	"go/token"
 
-
+	- "github.com/go-sql-driver/mysql"
 	"github.com/pb33f/libopenapi"
 	v3high "github.com/pb33f/libopenapi/datamodel/high/v3"
 	"golang.org/x/tools/imports"
@@ -77,7 +80,58 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// 数据库连接和定时删除操作
+	dsn := "mmuser:mmuser_password@tcp(101.43.103.236:3307)/mattermost?charset=utf8mb4,utf8&readTimeout=30s&writeTimeout=30s"
 
+	db, err := sql.Open("mysql", dsn)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// 验证连接
+	err = db.Ping()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("Connected to the database!")
+
+	// 定时删除超过24小时的记录
+	scheduleDelete(db)
+
+}
+
+func deleteOldPosts(db *sql.DB) {
+	// 计算24小时之前的时间戳
+	timestamp := time.Now().Add(-24 * time.Hour).Unix() * 1000 // 转换为毫秒
+
+	// 执行删除操作
+	result, err := db.Exec("DELETE FROM Posts WHERE CreateAt < ?", timestamp)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 获取受影响的行数
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Deleted %d old posts\n", rowsAffected)
+}
+
+func scheduleDelete(db *sql.DB) {
+	deleteOldPosts(db) // 立即执行一次
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			deleteOldPosts(db)
+		}
+	}
 }
 
 func applyExamples(v3Model *libopenapi.DocumentModel[v3high.Document], tmpl *template.Template) {
