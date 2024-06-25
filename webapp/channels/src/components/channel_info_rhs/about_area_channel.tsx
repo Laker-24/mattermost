@@ -1,7 +1,7 @@
 // Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
 // See LICENSE.txt for license information.
 
-import React from 'react';
+import React, {useEffect,useState } from 'react';
 import {useIntl} from 'react-intl';
 import styled from 'styled-components';
 
@@ -44,20 +44,19 @@ interface Props {
 
 const AboutAreaChannel = ({channel, canEditChannelProperties, actions}: Props) => {
     const {formatMessage} = useIntl();
-
+    const [duration, setDuration] = useState<string>('');
 
       // 连接数据库的配置
 const connectionConfig = {
-    host: '101.43.103.236:3307',
+    host: '101.43.103.236',
+    port: 3306,
     user: 'mmuser',
     password: 'mmuser_password',
-    database: 'matter',
+    database: 'mattermost',
   };
-
-let duration;
   
   // 计算聊天时长的函数
-  async function calculateChatDuration(channelId: string): Promise<string> {
+  const calculateChatDuration = async (channelId: string): Promise<string> =>{
     let connection;
   
     try {
@@ -97,18 +96,22 @@ let duration;
         await connection.end();
       }
     }
-  }
+  };
   
-  // 示例用法
-  (async () => {
-    try {
-      const channelId = channel.id;
-      duration = await calculateChatDuration(channelId);
-      console.log(`Chat duration for channel ${channelId}: ${duration}`);
-    } catch (err) {
-      console.error('Failed to calculate chat duration:', err);
-    }
-  })();
+  useEffect(() => {
+    // 示例用法
+    const fetchDuration = async () => {
+        try {
+            const channelId = channel.id;
+            const chatDuration = await calculateChatDuration(channelId);
+            setDuration(chatDuration);
+        } catch (err) {
+            console.error('Failed to calculate chat duration:', err);
+        }
+    };
+
+    fetchDuration();
+}, [channel.id]);
 
 
 
