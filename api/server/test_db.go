@@ -11,7 +11,7 @@ import (
 
 func main() {
     // 配置数据库连接
-    dsn := "mmuser:mmuser_password@tcp(101.43.103.236:3307)/mattermost?charset=utf8mb4,utf8&readTimeout=30s&writeTimeout=30s"
+    dsn := "mmuser:mmuser_password@tcp(101.43.103.236:3306)/mattermost?charset=utf8mb4,utf8&readTimeout=30s&writeTimeout=30s"
 
     db, err := sql.Open("mysql", dsn)
     if err != nil {
