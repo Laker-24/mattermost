@@ -1,0 +1,339 @@
+// Copyright (c) 2015-present Mattermost, Inc. All Rights Reserved.
+// See LICENSE.txt for license information.
+
+import {shallow} from 'enzyme';
+import React from 'react';
+import type {RouteComponentProps} from 'react-router-dom';
+import {bindActionCreators} from 'redux';
+import rudderAnalytics from 'rudder-sdk-js';
+
+import {ServiceEnvironment} from '@mattermost/types/config';
+
+import {Client4} from 'mattermost-redux/client';
+import type {Theme} from 'mattermost-redux/selectors/entities/preferences';
+
+import * as GlobalActions from 'actions/global_actions';
+
+import Root from 'components/root/root';
+
+import testConfigureStore from 'packages/mattermost-redux/test/test_store';
+import {StoragePrefixes} from 'utils/constants';
+
+import type {ProductComponent} from 'types/store/plugins';
+
+import {handleLoginLogoutSignal, redirectToOnboardingOrDefaultTeam} from './actions';
+
+jest.mock('rudder-sdk-js', () => ({
+    identify: jest.fn(),
+    load: jest.fn(),
+    page: jest.fn(),
+    ready: jest.fn((callback) => callback()),
+    track: jest.fn(),
+}));
+
+jest.mock('actions/telemetry_actions');
+
+jest.mock('actions/global_actions', () => ({
+    redirectUserToDefaultTeam: jest.fn(),
+}));
+
+jest.mock('utils/utils', () => {
+    const original = jest.requireActual('utils/utils');
+
+    return {
+        ...original,
+        localizeMessage: () => {},
+        applyTheme: jest.fn(),
+        makeIsEligibleForClick: jest.fn(),
+    };
+});
+
+jest.mock('mattermost-redux/actions/general', () => ({
+    getFirstAdminSetupComplete: jest.fn(() => Promise.resolve({
+        type: 'FIRST_ADMIN_COMPLETE_SETUP_RECEIVED',
+        data: true,
+    })),
+    setUrl: () => {},
+}));
+
+describe('components/Root', () => {
+    const store = testConfigureStore();
+
+    const baseProps = {
+        telemetryEnabled: true,
+        telemetryId: '1234ab',
+        noAccounts: false,
+        showTermsOfService: false,
+        theme: {} as Theme,
+        actions: {
+            loadConfigAndMe: jest.fn().mockImplementation(() => {
+                return Promise.resolve({
+                    config: {},
+                    isMeLoaded: false,
+                });
+            }),
+            getProfiles: jest.fn(),
+            loadRecentlyUsedCustomEmojis: jest.fn(),
+            migrateRecentEmojis: jest.fn(),
+            savePreferences: jest.fn(),
+            registerCustomPostRenderer: jest.fn(),
+            initializeProducts: jest.fn(),
+            ...bindActionCreators({
+                handleLoginLogoutSignal,
+                redirectToOnboardingOrDefaultTeam,
+            }, store.dispatch),
+        },
+        permalinkRedirectTeamName: 'myTeam',
+        showLaunchingWorkspace: false,
+        plugins: [],
+        products: [],
+        ...{
+            location: {
+                pathname: '/',
+            },
+        } as RouteComponentProps,
+        isCloud: false,
+        rhsIsExpanded: false,
+        rhsIsOpen: false,
+        shouldShowAppBar: false,
+    };
+
+    test('should load config and license on mount and redirect to sign-up page', () => {
+        const props = {
+            ...baseProps,
+            noAccounts: true,
+            history: {
+                push: jest.fn(),
+            } as unknown as RouteComponentProps['history'],
+        };
+
+        const wrapper = shallow<Root>(<Root {...props}/>);
+
+        wrapper.instance().onConfigLoaded({});
+        expect(props.history.push).toHaveBeenCalledWith('/signup_user_complete');
+        wrapper.unmount();
+    });
+
+    test('should load user, config, and license on mount and redirect to defaultTeam on success', (done) => {
+        document.cookie = 'MMUSERID=userid';
+        localStorage.setItem('was_logged_in', 'true');
+
+        const props = {
+            ...baseProps,
+            actions: {
+                ...baseProps.actions,
+                loadConfigAndMe: jest.fn().mockImplementation(() => {
+                    return Promise.resolve({
+                        config: {},
+                        isMeLoaded: true,
+                    });
+                }),
+            },
+        };
+
+        // Mock the method by extending the class because we don't have a chance to do it before shallow mounts the component
+        class MockedRoot extends Root {
+            onConfigLoaded = jest.fn(() => {
+                expect(this.onConfigLoaded).toHaveBeenCalledTimes(1);
+                expect(GlobalActions.redirectUserToDefaultTeam).toHaveBeenCalledTimes(1);
+                expect(props.actions.loadConfigAndMe).toHaveBeenCalledTimes(1);
+                done();
+            });
+        }
+
+        const wrapper = shallow(<MockedRoot {...props}/>);
+        wrapper.unmount();
+    });
+
+    test('should load user, config, and license on mount and should not redirect to defaultTeam id pathname is not root', (done) => {
+        document.cookie = 'MMUSERID=userid';
+        localStorage.setItem('was_logged_in', 'true');
+
+        const props = {
+            ...baseProps,
+            location: {
+                pathname: '/admin_console',
+            } as RouteComponentProps['location'],
+            actions: {
+                ...baseProps.actions,
+                loadConfigAndMe: jest.fn().mockImplementation(() => {
+                    return Promise.resolve({
+                        config: {},
+                        isMeLoaded: true,
+                    });
+                }),
+            },
+        };
+
+        // Mock the method by extending the class because we don't have a chance to do it before shallow mounts the component
+        class MockedRoot extends Root {
+            onConfigLoaded = jest.fn(() => {
+                expect(this.onConfigLoaded).toHaveBeenCalledTimes(1);
+                expect(GlobalActions.redirectUserToDefaultTeam).not.toHaveBeenCalled();
+                expect(props.actions.loadConfigAndMe).toHaveBeenCalledTimes(1);
+                done();
+            });
+        }
+
+        const wrapper = shallow(<MockedRoot {...props}/>);
+        wrapper.unmount();
+    });
+
+    test('should call history on props change', () => {
+        const props = {
+            ...baseProps,
+            noAccounts: false,
+            history: {
+                push: jest.fn(),
+            } as unknown as RouteComponentProps['history'],
+        };
+        const wrapper = shallow<Root>(<Root {...props}/>);
+        expect(props.history.push).not.toHaveBeenCalled();
+        const props2 = {
+            noAccounts: true,
+        };
+        wrapper.setProps(props2);
+        expect(props.history.push).toHaveBeenLastCalledWith('/signup_user_complete');
+        wrapper.unmount();
+    });
+
+    test('should reload on focus after getting signal login event from another tab', () => {
+        Object.defineProperty(window.location, 'reload', {
+            configurable: true,
+            writable: true,
+        });
+        window.location.reload = jest.fn();
+        const wrapper = shallow<Root>(<Root {...baseProps}/>);
+        const loginSignal = new StorageEvent('storage', {
+            key: StoragePrefixes.LOGIN,
+            newValue: String(Math.random()),
+            storageArea: localStorage,
+        });
+
+        window.dispatchEvent(loginSignal);
+        window.dispatchEvent(new Event('focus'));
+        expect(window.location.reload).toBeCalledTimes(1);
+        wrapper.unmount();
+    });
+
+    describe('onConfigLoaded', () => {
+        afterEach(() => {
+            Client4.telemetryHandler = undefined;
+        });
+
+        test('should not set a TelemetryHandler when onConfigLoaded is called if Rudder is not configured', () => {
+            const wrapper = shallow<Root>(<Root {...baseProps}/>);
+
+            wrapper.instance().onConfigLoaded({
+                ServiceEnvironment: ServiceEnvironment.DEV,
+            });
+
+            Client4.trackEvent('category', 'event');
+
+            expect(Client4.telemetryHandler).not.toBeDefined();
+
+            wrapper.unmount();
+        });
+
+        test('should set a TelemetryHandler when onConfigLoaded is called if Rudder is configured', () => {
+            const wrapper = shallow<Root>(<Root {...baseProps}/>);
+
+            wrapper.instance().onConfigLoaded({
+                ServiceEnvironment: ServiceEnvironment.TEST,
+            });
+
+            Client4.trackEvent('category', 'event');
+
+            expect(Client4.telemetryHandler).toBeDefined();
+
+            wrapper.unmount();
+        });
+
+        test('should not set a TelemetryHandler when onConfigLoaded is called but Rudder has been blocked', () => {
+            (rudderAnalytics.ready as any).mockImplementation(() => {
+                // Simulate an error occurring and the callback not getting called
+            });
+
+            const wrapper = shallow<Root>(<Root {...baseProps}/>);
+
+            wrapper.instance().onConfigLoaded({
+                ServiceEnvironment: ServiceEnvironment.PRODUCTION,
+            });
+
+            Client4.trackEvent('category', 'event');
+
+            expect(Client4.telemetryHandler).not.toBeDefined();
+
+            wrapper.unmount();
+        });
+    });
+
+    describe('Routes', () => {
+        test('Should mount public product routes', () => {
+            const mainComponent = () => (<p>{'TestMainComponent'}</p>);
+            const publicComponent = () => (<p>{'TestPublicProduct'}</p>);
+
+            const props = {
+                ...baseProps,
+                products: [{
+                    id: 'productwithpublic',
+                    baseURL: '/productwithpublic',
+                    mainComponent,
+                    publicComponent,
+                } as unknown as ProductComponent,
+                {
+                    id: 'productwithoutpublic',
+                    baseURL: '/productwithoutpublic',
+                    mainComponent,
+                    publicComponent: null,
+                } as unknown as ProductComponent],
+            };
+
+            const wrapper = shallow<Root>(<Root {...props}/>);
+
+            wrapper.instance().setState({configLoaded: true});
+            expect(wrapper).toMatchSnapshot();
+            wrapper.unmount();
+        });
+    });
+
+    describe('showLandingPageIfNecessary', () => {
+        const landingProps = {
+            ...baseProps,
+            iosDownloadLink: 'http://iosapp.com',
+            androidDownloadLink: 'http://androidapp.com',
+            appDownloadLink: 'http://desktopapp.com',
+            ...{
+                location: {
+                    pathname: '/',
+                    search: '',
+                },
+            } as RouteComponentProps,
+            history: {
+                push: jest.fn(),
+            } as unknown as RouteComponentProps['history'],
+        };
+
+        test('should show for normal cases', () => {
+            const wrapper = shallow<Root>(<Root {...landingProps}/>);
+            wrapper.instance().onConfigLoaded({});
+            expect(landingProps.history.push).toHaveBeenCalledWith('/landing#/');
+            wrapper.unmount();
+        });
+
+        test('should not show for Desktop App login flow', () => {
+            const props = {
+                ...landingProps,
+                ...{
+                    location: {
+                        pathname: '/login/desktop',
+                    },
+                } as RouteComponentProps,
+            };
+            const wrapper = shallow<Root>(<Root {...props}/>);
+            wrapper.instance().onConfigLoaded({});
+            expect(props.history.push).not.toHaveBeenCalled();
+            wrapper.unmount();
+        });
+    });
+});
